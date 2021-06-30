@@ -29,7 +29,9 @@ data class CloudNotification internal constructor(
     val message: String,
     val createdTimestamp: Long,
     val icon: IconResource?,
-    val severity: String?
+    val severity: String?,
+    val title: String?
+
 ) : Parcelable
 
 @Throws(JSONException::class)
@@ -50,5 +52,7 @@ fun JSONObject.toCloudNotification(): CloudNotification {
         getString("message"),
         created,
         optStringOrNull("icon").toOH2IconResource(),
-        optStringOrNull("severity"))
+        optStringOrNull("severity"),
+        optStringOrNull("title")
+    )
 }

@@ -16,6 +16,7 @@ package org.openhab.habdroid.ui
 import android.content.Context
 import android.text.format.DateUtils
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.core.view.isGone
@@ -98,6 +99,7 @@ class CloudNotificationAdapter(context: Context, private val loadMoreListener: (
         RecyclerView.ViewHolder(inflater.inflate(R.layout.notificationlist_item, parent, false)) {
         private val createdView: TextView = itemView.findViewById(R.id.notificationCreated)
         private val messageView: TextView = itemView.findViewById(R.id.notificationMessage)
+        private val titleView: TextView = itemView.findViewById(R.id.notificationTitle)
         private val iconView: WidgetImageView = itemView.findViewById(R.id.notificationImage)
         private val severityView: TextView = itemView.findViewById(R.id.notificationSeverity)
 
@@ -106,6 +108,8 @@ class CloudNotificationAdapter(context: Context, private val loadMoreListener: (
                 notification.createdTimestamp,
                 DateUtils.MINUTE_IN_MILLIS, DateUtils.WEEK_IN_MILLIS, 0)
             messageView.text = notification.message
+            titleView.text = notification.title;
+            titleView.isGone = notification.title.isNullOrEmpty()
 
             val conn = ConnectionFactory.activeCloudConnection?.connection
             if (notification.icon != null && conn != null) {

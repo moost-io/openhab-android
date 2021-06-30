@@ -47,7 +47,8 @@ class FcmMessageListenerService : FirebaseMessagingService() {
                     // in that case. If that also isn't present, don't show time at all.
                     data["timestamp"]?.toLong() ?: message.sentTime,
                     data["icon"].toOH2IconResource(),
-                    data["severity"]
+                    data["severity"],
+                    data["title"]
                 )
 
                 runBlocking {
