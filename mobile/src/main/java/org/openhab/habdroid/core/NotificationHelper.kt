@@ -30,6 +30,7 @@ import org.openhab.habdroid.R
 import org.openhab.habdroid.background.NotificationUpdateObserver
 import org.openhab.habdroid.core.connection.ConnectionFactory
 import org.openhab.habdroid.model.CloudNotification
+import org.openhab.habdroid.model.toOpenHABActionIntent
 import org.openhab.habdroid.ui.MainActivity
 import org.openhab.habdroid.util.HttpClient
 import org.openhab.habdroid.util.ImageConversionPolicy
@@ -149,17 +150,29 @@ class NotificationHelper constructor(private val context: Context) {
             .setContentIntent(contentIntent)
             .build()
 
-        return makeNotificationBuilder(channelId, message.createdTimestamp)
-            .setLargeIcon(iconBitmap)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message.message))
-            .setSound(context.getPrefs().getNotificationTone())
-            .setContentText(message.message)
-            .setSubText(message.severity)
-            .setContentIntent(contentIntent)
-            .setDeleteIntent(deleteIntent)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setPublicVersion(publicVersion)
-            .build()
+        val notificationBuilder =
+            makeNotificationBuilder(channelId, message.createdTimestamp)
+                .setLargeIcon(iconBitmap)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message.message))
+                .setSound(context.getPrefs().getNotificationTone())
+                .setContentText(message.message)
+                .setContentTitle(message.title)
+                .setSubText(message.severity)
+                .setContentIntent(contentIntent)
+                .setDeleteIntent(deleteIntent)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(publicVersion)
+
+        for (action in message.actions) {
+            val actionIntent = makeNotificationClickIntent(
+                message.id,
+                notificationId,
+                action.toOpenHABActionIntent()
+            )
+            notificationBuilder.addAction(R.drawable.ic_access_time_white_24dp, action.text, actionIntent)
+        }
+
+        return notificationBuilder.build()
     }
 
     @TargetApi(24)
@@ -195,10 +208,11 @@ class NotificationHelper constructor(private val context: Context) {
 
     private fun makeNotificationClickIntent(
         persistedId: String?,
-        notificationId: Int
+        notificationId: Int,
+        clickAction: String? = MainActivity.ACTION_NOTIFICATION_SELECTED
     ): PendingIntent {
         val contentIntent = Intent(context, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_NOTIFICATION_SELECTED
+            action = clickAction
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_NOTIFICATION_ID, notificationId)
             putExtra(MainActivity.EXTRA_PERSISTED_NOTIFICATION_ID, persistedId)

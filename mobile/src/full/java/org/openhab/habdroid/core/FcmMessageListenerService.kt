@@ -17,6 +17,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.runBlocking
 import org.openhab.habdroid.model.CloudNotification
+import org.openhab.habdroid.model.CloudNotificationAction
 import org.openhab.habdroid.model.toOH2IconResource
 
 class FcmMessageListenerService : FirebaseMessagingService() {
@@ -48,7 +49,11 @@ class FcmMessageListenerService : FirebaseMessagingService() {
                     data["timestamp"]?.toLong() ?: message.sentTime,
                     data["icon"].toOH2IconResource(),
                     data["severity"],
-                    data["title"]
+                    data["title"],
+                    mutableListOf(
+                        CloudNotificationAction(data["positiveActionText"], data["positiveActionType"], true),
+                        CloudNotificationAction(data["negativeActionText"], data["negativeActionType"])
+                    )
                 )
 
                 runBlocking {
@@ -57,8 +62,10 @@ class FcmMessageListenerService : FirebaseMessagingService() {
                         notificationId,
                         cloudNotification,
                         FcmRegistrationService.createHideNotificationIntent(context, notificationId),
-                        FcmRegistrationService.createHideNotificationIntent(context,
-                            NotificationHelper.SUMMARY_NOTIFICATION_ID)
+                        FcmRegistrationService.createHideNotificationIntent(
+                            context,
+                            NotificationHelper.SUMMARY_NOTIFICATION_ID
+                        )
                     )
                 }
             }

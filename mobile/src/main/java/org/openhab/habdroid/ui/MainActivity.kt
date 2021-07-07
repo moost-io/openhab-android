@@ -80,6 +80,7 @@ import org.openhab.habdroid.background.BackgroundTasksManager
 import org.openhab.habdroid.background.EventListenerService
 import org.openhab.habdroid.background.NotificationUpdateObserver
 import org.openhab.habdroid.core.CloudMessagingHelper
+import org.openhab.habdroid.core.NotificationHelper
 import org.openhab.habdroid.core.UpdateBroadcastReceiver
 import org.openhab.habdroid.core.connection.CloudConnection
 import org.openhab.habdroid.core.connection.Connection
@@ -749,6 +750,11 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
                 val notificationId = intent.getStringExtra(EXTRA_PERSISTED_NOTIFICATION_ID).orEmpty()
                 executeActionIfPossible(PendingAction.OpenNotification(notificationId, true))
             }
+            ACTION_DISMISS_NOTIFICATION -> {
+                val notificationHelper = NotificationHelper(this)
+                val notificationId = intent.getIntExtra(NotificationHelper.EXTRA_NOTIFICATION_ID, 0)
+                notificationHelper.cancelNotification(notificationId)
+            }
             ACTION_HABPANEL_SELECTED, ACTION_OH3_UI_SELECTED, ACTION_FRONTAIL_SELECTED, ACTION_RULECREATOR_SELECTED -> {
                 val serverId = intent.getIntExtra(EXTRA_SERVER_ID, prefs.getActiveServerId())
                 val ui = when (intent.action) {
@@ -759,6 +765,10 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
                 }
                 val subpage = intent.getStringExtra(EXTRA_SUBPAGE)
                 executeOrStoreAction(PendingAction.OpenWebViewUi(ui, serverId, subpage))
+
+                val notificationHelper = NotificationHelper(this)
+                val notificationId = intent.getIntExtra(NotificationHelper.EXTRA_NOTIFICATION_ID, 0)
+                notificationHelper.cancelNotification(notificationId)
             }
             ACTION_VOICE_RECOGNITION_SELECTED -> executeOrStoreAction(PendingAction.LaunchVoiceRecognition())
             ACTION_SITEMAP_SELECTED -> {
@@ -1414,6 +1424,7 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
         const val ACTION_NOTIFICATION_SELECTED = "org.openhab.habdroid.action.NOTIFICATION_SELECTED"
         const val ACTION_HABPANEL_SELECTED = "org.openhab.habdroid.action.HABPANEL_SELECTED"
         const val ACTION_RULECREATOR_SELECTED = "org.openhab.habdroid.action.RULECREATOR_SELECTED"
+        const val ACTION_DISMISS_NOTIFICATION = "org.openhab.habdroid.action.DISMISS_NOTIFICATION"
         const val ACTION_OH3_UI_SELECTED = "org.openhab.habdroid.action.OH3_UI_SELECTED"
         const val ACTION_FRONTAIL_SELECTED = "org.openhab.habdroid.action.FRONTAIL"
         const val ACTION_VOICE_RECOGNITION_SELECTED = "org.openhab.habdroid.action.VOICE_SELECTED"
