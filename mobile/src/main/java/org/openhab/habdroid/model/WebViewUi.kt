@@ -17,6 +17,7 @@ import org.openhab.habdroid.ui.activity.AbstractWebViewFragment
 import org.openhab.habdroid.ui.activity.FrontailWebViewFragment
 import org.openhab.habdroid.ui.activity.HabpanelWebViewFragment
 import org.openhab.habdroid.ui.activity.Oh3UiWebViewFragment
+import org.openhab.habdroid.ui.activity.RuleCreatorWebViewFragment
 
 data class WebViewUi(
     val serverFlag: Int,
@@ -36,6 +37,11 @@ data class WebViewUi(
         val FRONTAIL = WebViewUi(
             0,
             FrontailWebViewFragment::class.java
+        )
+
+        val RULECREATOR = WebViewUi(
+            0,
+            RuleCreatorWebViewFragment::class.java
         )
     }
 }

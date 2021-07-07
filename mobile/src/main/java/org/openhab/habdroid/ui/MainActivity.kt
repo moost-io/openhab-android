@@ -749,11 +749,12 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
                 val notificationId = intent.getStringExtra(EXTRA_PERSISTED_NOTIFICATION_ID).orEmpty()
                 executeActionIfPossible(PendingAction.OpenNotification(notificationId, true))
             }
-            ACTION_HABPANEL_SELECTED, ACTION_OH3_UI_SELECTED, ACTION_FRONTAIL_SELECTED -> {
+            ACTION_HABPANEL_SELECTED, ACTION_OH3_UI_SELECTED, ACTION_FRONTAIL_SELECTED, ACTION_RULECREATOR_SELECTED -> {
                 val serverId = intent.getIntExtra(EXTRA_SERVER_ID, prefs.getActiveServerId())
                 val ui = when (intent.action) {
                     ACTION_HABPANEL_SELECTED -> WebViewUi.HABPANEL
                     ACTION_FRONTAIL_SELECTED -> WebViewUi.FRONTAIL
+                    ACTION_RULECREATOR_SELECTED -> WebViewUi.RULECREATOR
                     else -> WebViewUi.OH3_UI
                 }
                 val subpage = intent.getStringExtra(EXTRA_SUBPAGE)
@@ -840,6 +841,10 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
                 }
                 R.id.frontail -> {
                     openWebViewUi(WebViewUi.FRONTAIL, false, null)
+                    handled = true
+                }
+                R.id.rulecreator -> {
+                    openWebViewUi(WebViewUi.RULECREATOR, false, null)
                     handled = true
                 }
                 R.id.settings -> {
@@ -1408,6 +1413,7 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
     companion object {
         const val ACTION_NOTIFICATION_SELECTED = "org.openhab.habdroid.action.NOTIFICATION_SELECTED"
         const val ACTION_HABPANEL_SELECTED = "org.openhab.habdroid.action.HABPANEL_SELECTED"
+        const val ACTION_RULECREATOR_SELECTED = "org.openhab.habdroid.action.RULECREATOR_SELECTED"
         const val ACTION_OH3_UI_SELECTED = "org.openhab.habdroid.action.OH3_UI_SELECTED"
         const val ACTION_FRONTAIL_SELECTED = "org.openhab.habdroid.action.FRONTAIL"
         const val ACTION_VOICE_RECOGNITION_SELECTED = "org.openhab.habdroid.action.VOICE_SELECTED"

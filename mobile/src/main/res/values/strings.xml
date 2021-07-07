@@ -16,6 +16,8 @@
     <string name="mainmenu_openhab_preferences">Settings</string>
     <string name="mainmenu_openhab_habpanel">HABPanel</string>
     <string name="mainmenu_openhab_habpanel_on_server">HABPanel (%s)</string>
+    <string name="mainmenu_openhab_rulecreator_ui">Rule Creator</string>
+    <string name="mainmenu_openhab_rulecreator_ui_on_server">Rule Creator (%s)</string>
     <string name="mainmenu_openhab_oh3_ui">openHAB 3 UI</string>
     <string name="mainmenu_openhab_oh3_ui_on_server">openHAB 3 UI (%s)</string>
     <string name="mainmenu_openhab_frontail">Frontail</string>
@@ -23,6 +25,7 @@
     <string name="app_notifications">Notifications</string>
     <string name="app_notifications_on_server">Notifications (%s)</string>
     <string name="habpanel_error">An error occurred while loading HABPanel</string>
+    <string name="rulecreator_error">An error occurred while loading Rule Creator</string>
     <string name="oh3_ui_error">An error occurred while loading openHAB 3 UI</string>
     <string name="frontail_error">An error occurred while loading Frontail. Please note that it\'s not available via openHAB Cloud.</string>
     <string name="frontail_pref_summary">Frontail must run on its default port 9001. It\'s bundled with openHABian or can be installed manually.</string>
