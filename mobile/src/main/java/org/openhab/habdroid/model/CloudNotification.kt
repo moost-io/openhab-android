@@ -31,7 +31,8 @@ data class CloudNotification internal constructor(
     val icon: IconResource?,
     val severity: String?,
     val title: String?,
-    val actions: List<CloudNotificationAction>
+    val actions: List<CloudNotificationAction>,
+    val recommendationId: String?
 ) : Parcelable
 
 @Throws(JSONException::class)
@@ -60,6 +61,7 @@ fun JSONObject.toCloudNotification(): CloudNotification {
         optStringOrNull("icon").toOH2IconResource(),
         optStringOrNull("severity"),
         optStringOrNull("title"),
-        cloudNotificationActionList
+        cloudNotificationActionList,
+        optStringOrNull("recommendationId")
     )
 }

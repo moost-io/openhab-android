@@ -24,35 +24,36 @@ import androidx.core.app.JobIntentService
 import com.google.firebase.iid.FirebaseInstanceId
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.RemoteMessage
-import java.io.IOException
-import java.net.URLEncoder
-import java.util.Locale
 import kotlinx.coroutines.runBlocking
 import org.openhab.habdroid.R
 import org.openhab.habdroid.core.connection.CloudConnection
 import org.openhab.habdroid.core.connection.ConnectionFactory
 import org.openhab.habdroid.util.HttpClient
 import org.openhab.habdroid.util.Util
+import java.io.IOException
+import java.net.URLEncoder
+import java.util.Locale
 
 class FcmRegistrationService : JobIntentService() {
     /**
      * @author https://stackoverflow.com/a/12707479
      */
-    private val deviceName: String get() {
-        val manufacturer = Build.MANUFACTURER
-        val model = Build.MODEL
+    private val deviceName: String
+        get() {
+            val manufacturer = Build.MANUFACTURER
+            val model = Build.MODEL
 
-        val actualModel = if (model.lowercase(Locale.ROOT).startsWith(manufacturer.lowercase(Locale.ROOT)))
-            model else "$manufacturer $model"
+            val actualModel = if (model.lowercase(Locale.ROOT).startsWith(manufacturer.lowercase(Locale.ROOT)))
+                model else "$manufacturer $model"
 
-        // Capitalize returned value
-        val first = actualModel.elementAtOrNull(0)
-        return when {
-            first == null -> ""
-            Character.isUpperCase(first) -> actualModel
-            else -> Character.toUpperCase(first) + actualModel.substring(1)
+            // Capitalize returned value
+            val first = actualModel.elementAtOrNull(0)
+            return when {
+                first == null -> ""
+                Character.isUpperCase(first) -> actualModel
+                else -> Character.toUpperCase(first) + actualModel.substring(1)
+            }
         }
-    }
 
     override fun onHandleWork(intent: Intent) {
         runBlocking {
@@ -81,6 +82,16 @@ class FcmRegistrationService : JobIntentService() {
                 if (id >= 0) {
                     sendHideNotificationRequest(id, connection.messagingSenderId)
                 }
+
+                val recommendationId = intent.getStringExtra(NotificationHelper.EXTRA_RECOMMENDATION_ID)
+                val moostActionQualifier = intent.getStringExtra(NotificationHelper.EXTRA_MOOST_ACTION_QUALIFIER)
+
+                if (recommendationId != null && recommendationId != "") {
+                    val notifHelper = NotificationHelper(applicationContext)
+                    runBlocking {
+                        notifHelper.sendNotificationInteractionToOpenHABCloud(recommendationId, moostActionQualifier)
+                    }
+                }
             }
         }
     }
@@ -88,15 +99,19 @@ class FcmRegistrationService : JobIntentService() {
     // HttpException is thrown by our HTTP code, IOException can be thrown by FCM
     @Throws(HttpClient.HttpException::class, IOException::class)
     private suspend fun registerFcm(connection: CloudConnection) {
-        val token = FirebaseInstanceId.getInstance().getToken(connection.messagingSenderId,
-                FirebaseMessaging.INSTANCE_ID_SCOPE)
+        val token = FirebaseInstanceId.getInstance().getToken(
+            connection.messagingSenderId,
+            FirebaseMessaging.INSTANCE_ID_SCOPE
+        )
         val deviceName = deviceName + if (Util.isFlavorBeta) " (${getString(R.string.beta)})" else ""
         val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) +
-                if (Util.isFlavorBeta) "-beta" else ""
+            if (Util.isFlavorBeta) "-beta" else ""
 
-        val regUrl = String.format(Locale.US,
-                "addAndroidRegistration?deviceId=%s&deviceModel=%s&regId=%s",
-                deviceId, URLEncoder.encode(deviceName, "UTF-8"), token)
+        val regUrl = String.format(
+            Locale.US,
+            "addAndroidRegistration?deviceId=%s&deviceModel=%s&regId=%s",
+            deviceId, URLEncoder.encode(deviceName, "UTF-8"), token
+        )
 
         Log.d(TAG, "Register device at openHAB-cloud with URL: $regUrl")
         connection.httpClient.get(regUrl).close()
@@ -106,9 +121,9 @@ class FcmRegistrationService : JobIntentService() {
     private fun sendHideNotificationRequest(notificationId: Int, senderId: String) {
         val fcm = FirebaseMessaging.getInstance()
         val message = RemoteMessage.Builder("$senderId@gcm.googleapis.com")
-                .addData("type", "hideNotification")
-                .addData("notificationId", notificationId.toString())
-                .build()
+            .addData("type", "hideNotification")
+            .addData("notificationId", notificationId.toString())
+            .build()
         fcm.send(message)
     }
 
@@ -121,7 +136,7 @@ class FcmRegistrationService : JobIntentService() {
         companion object {
             internal fun wrap(context: Context, intent: Intent, id: Int): PendingIntent {
                 val wrapped = Intent(context, ProxyReceiver::class.java)
-                        .putExtra("intent", intent)
+                    .putExtra("intent", intent)
                 return PendingIntent.getBroadcast(context, id, wrapped, PendingIntent.FLAG_UPDATE_CURRENT)
             }
         }
@@ -135,27 +150,45 @@ class FcmRegistrationService : JobIntentService() {
         private const val ACTION_REGISTER = "org.openhab.habdroid.action.REGISTER_GCM"
         private const val ACTION_HIDE_NOTIFICATION = "org.openhab.habdroid.action.HIDE_NOTIFICATION"
         private const val EXTRA_NOTIFICATION_ID = "notificationId"
+        private const val EXTRA_RECOMMENDATION_ID = "recommendationId"
+        private const val EXTRA_MOOST_ACTION_QUALIFIER = "moostActionQualifier"
 
         internal fun scheduleRegistration(context: Context) {
             val intent = Intent(context, FcmRegistrationService::class.java)
-                    .setAction(ACTION_REGISTER)
+                .setAction(ACTION_REGISTER)
             enqueueWork(context, FcmRegistrationService::class.java, JOB_ID, intent)
         }
 
         internal fun scheduleHideNotification(context: Context, notificationId: Int) {
-            enqueueWork(context, FcmRegistrationService::class.java, JOB_ID,
-                    makeHideNotificationIntent(context, notificationId))
+            enqueueWork(
+                context, FcmRegistrationService::class.java, JOB_ID,
+                makeHideNotificationIntent(context, notificationId, "", "")
+            )
         }
 
-        internal fun createHideNotificationIntent(context: Context, notificationId: Int): PendingIntent {
-            return ProxyReceiver.wrap(context, makeHideNotificationIntent(context, notificationId),
-                    notificationId)
+        internal fun createHideNotificationIntent(
+            context: Context,
+            notificationId: Int,
+            recommendationId: String?,
+            actionQualifier: String
+        ): PendingIntent {
+            return ProxyReceiver.wrap(
+                context, makeHideNotificationIntent(context, notificationId, recommendationId, actionQualifier),
+                notificationId
+            )
         }
 
-        private fun makeHideNotificationIntent(context: Context, notificationId: Int): Intent {
+        private fun makeHideNotificationIntent(
+            context: Context,
+            notificationId: Int,
+            recommendationId: String?,
+            actionQualifier: String
+        ): Intent {
             return Intent(context, FcmRegistrationService::class.java)
-                    .setAction(ACTION_HIDE_NOTIFICATION)
-                    .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+                .setAction(ACTION_HIDE_NOTIFICATION)
+                .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+                .putExtra(EXTRA_RECOMMENDATION_ID, recommendationId)
+                .putExtra(EXTRA_MOOST_ACTION_QUALIFIER, actionQualifier)
         }
     }
 }

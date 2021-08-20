@@ -53,7 +53,8 @@ class FcmMessageListenerService : FirebaseMessagingService() {
                     mutableListOf(
                         CloudNotificationAction(data["positiveActionText"], data["positiveActionType"], true),
                         CloudNotificationAction(data["negativeActionText"], data["negativeActionType"])
-                    )
+                    ),
+                    data["recommendationId"]
                 )
 
                 runBlocking {
@@ -61,10 +62,17 @@ class FcmMessageListenerService : FirebaseMessagingService() {
                     notifHelper.showNotification(
                         notificationId,
                         cloudNotification,
-                        FcmRegistrationService.createHideNotificationIntent(context, notificationId),
                         FcmRegistrationService.createHideNotificationIntent(
                             context,
-                            NotificationHelper.SUMMARY_NOTIFICATION_ID
+                            notificationId,
+                            cloudNotification.recommendationId,
+                            "Dismiss"
+                        ),
+                        FcmRegistrationService.createHideNotificationIntent(
+                            context,
+                            NotificationHelper.SUMMARY_NOTIFICATION_ID,
+                            cloudNotification.recommendationId,
+                            "Dismiss"
                         )
                     )
                 }

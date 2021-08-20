@@ -26,6 +26,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
 import org.openhab.habdroid.R
 import org.openhab.habdroid.background.NotificationUpdateObserver
 import org.openhab.habdroid.core.connection.ConnectionFactory
@@ -138,7 +139,14 @@ class NotificationHelper constructor(private val context: Context) {
             }
         }
 
-        val contentIntent = makeNotificationClickIntent(message.id, notificationId)
+        //Intent when notification is clicked
+        val contentIntent = makeNotificationClickIntent(
+            message.id,
+            notificationId,
+            MainActivity.ACTION_NOTIFICATION_SELECTED,
+            message.recommendationId,
+            "OpenNotification"
+        )
         val channelId = getChannelId(message.severity)
 
         val publicText = context.resources.getQuantityString(
@@ -164,11 +172,15 @@ class NotificationHelper constructor(private val context: Context) {
                 .setPublicVersion(publicVersion)
 
         for (action in message.actions) {
+            //Intents when the actions (buttons) are pressed
             val actionIntent = makeNotificationClickIntent(
                 message.id,
                 notificationId,
-                action.toOpenHABActionIntent()
+                action.toOpenHABActionIntent(),
+                message.recommendationId,
+                action.actionQualifier
             )
+
             notificationBuilder.addAction(R.drawable.ic_access_time_white_24dp, action.text, actionIntent)
         }
 
@@ -206,16 +218,43 @@ class NotificationHelper constructor(private val context: Context) {
             .build()
     }
 
+    suspend fun sendNotificationInteractionToOpenHABCloud(recommendationId: String?, moostActionQualifier: String?) {
+        val url = "moost/v1/interactions"
+
+        val jsonBody = JSONObject()
+            .put("recommendationId", recommendationId)
+            .put("actionQualifier", moostActionQualifier)
+
+        ConnectionFactory.waitForInitialization()
+        val connection = ConnectionFactory.primaryCloudConnection?.connection
+        if (connection == null) {
+            Log.d(TAG, "Got no connection")
+            return
+        }
+
+        try {
+            connection.httpClient.post(url, jsonBody.toString(), "application/json;charset=utf-8").response
+            Log.d(TAG, "Notification interaction sent successful")
+        } catch (e: HttpClient.HttpException) {
+            Log.e(TAG, "Notifications interaction send failure", e)
+            null
+        } ?: return
+    }
+
     private fun makeNotificationClickIntent(
         persistedId: String?,
         notificationId: Int,
-        clickAction: String? = MainActivity.ACTION_NOTIFICATION_SELECTED
+        clickAction: String? = MainActivity.ACTION_NOTIFICATION_SELECTED,
+        recommendationId: String? = "",
+        moostActionQualifier: String? = ""
     ): PendingIntent {
         val contentIntent = Intent(context, MainActivity::class.java).apply {
             action = clickAction
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_NOTIFICATION_ID, notificationId)
             putExtra(MainActivity.EXTRA_PERSISTED_NOTIFICATION_ID, persistedId)
+            putExtra(EXTRA_RECOMMENDATION_ID, recommendationId)
+            putExtra(EXTRA_MOOST_ACTION_QUALIFIER, moostActionQualifier)
         }
         return PendingIntent.getActivity(
             context, notificationId,
@@ -247,6 +286,8 @@ class NotificationHelper constructor(private val context: Context) {
 
         @Suppress("MemberVisibilityCanBePrivate") // Used in full flavor
         internal const val EXTRA_NOTIFICATION_ID = "notificationId"
+        internal const val EXTRA_RECOMMENDATION_ID = "recommendationId"
+        internal const val EXTRA_MOOST_ACTION_QUALIFIER = "moostActionQualifier"
         internal const val SUMMARY_NOTIFICATION_ID = 0
 
         // Notification grouping is only available on N or higher, as mentioned in
