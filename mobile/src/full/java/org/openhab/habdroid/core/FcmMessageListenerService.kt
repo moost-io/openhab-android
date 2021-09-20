@@ -13,6 +13,7 @@
 
 package org.openhab.habdroid.core
 
+import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.runBlocking
@@ -24,17 +25,20 @@ class FcmMessageListenerService : FirebaseMessagingService() {
     private lateinit var notifHelper: NotificationHelper
 
     override fun onCreate() {
+        Log.d(TAG, "onCreate()")
         super.onCreate()
         notifHelper = NotificationHelper(this)
     }
 
     override fun onNewToken(token: String) {
+        Log.d(TAG, "onNewToken()")
         super.onNewToken(token)
-        FcmRegistrationService.scheduleRegistration(this)
+        FcmRegistrationWorker.scheduleRegistration(this)
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
+        Log.d(TAG, "onMessageReceived with data $data")
         val messageType = data["type"] ?: return
         val notificationId = data["notificationId"]?.toInt() ?: 1
 
@@ -62,13 +66,13 @@ class FcmMessageListenerService : FirebaseMessagingService() {
                     notifHelper.showNotification(
                         notificationId,
                         cloudNotification,
-                        FcmRegistrationService.createHideNotificationIntent(
+                        FcmRegistrationWorker.createHideNotificationIntent(
                             context,
                             notificationId,
                             cloudNotification.recommendationId,
                             "Dismiss"
                         ),
-                        FcmRegistrationService.createHideNotificationIntent(
+                        FcmRegistrationWorker.createHideNotificationIntent(
                             context,
                             NotificationHelper.SUMMARY_NOTIFICATION_ID,
                             cloudNotification.recommendationId,
@@ -81,5 +85,9 @@ class FcmMessageListenerService : FirebaseMessagingService() {
                 notifHelper.cancelNotification(notificationId)
             }
         }
+    }
+
+    companion object {
+        private val TAG = FcmMessageListenerService::class.java.simpleName
     }
 }

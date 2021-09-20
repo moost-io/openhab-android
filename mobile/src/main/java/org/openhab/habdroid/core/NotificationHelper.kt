@@ -41,7 +41,6 @@ import org.openhab.habdroid.util.getNotificationVibrationPattern
 import org.openhab.habdroid.util.getPrefs
 
 class NotificationHelper constructor(private val context: Context) {
-    private val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     suspend fun showNotification(
         notificationId: Int,
@@ -51,6 +50,7 @@ class NotificationHelper constructor(private val context: Context) {
     ) {
         createChannelForSeverity(message.severity)
 
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val n = makeNotification(
             message,
             notificationId,
@@ -73,6 +73,7 @@ class NotificationHelper constructor(private val context: Context) {
     }
 
     fun cancelNotification(notificationId: Int) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(notificationId)
         if (HAS_GROUPING_SUPPORT) {
             val active = notificationManager.activeNotifications
@@ -89,6 +90,7 @@ class NotificationHelper constructor(private val context: Context) {
     }
 
     private fun createChannelForSeverity(severity: String?) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return
         }

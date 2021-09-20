@@ -28,7 +28,6 @@ import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.Icon
 import android.location.LocationManager
-import android.net.wifi.WifiManager
 import android.nfc.NfcAdapter
 import android.os.Build
 import android.os.Bundle
@@ -44,6 +43,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.ActionBarDrawerToggle
@@ -78,6 +78,7 @@ import org.openhab.habdroid.background.EventListenerService
 import org.openhab.habdroid.background.NotificationUpdateObserver
 import org.openhab.habdroid.core.CloudMessagingHelper
 import org.openhab.habdroid.core.NotificationHelper
+import org.openhab.habdroid.core.OpenHabApplication
 import org.openhab.habdroid.core.UpdateBroadcastReceiver
 import org.openhab.habdroid.core.connection.CloudConnection
 import org.openhab.habdroid.core.connection.Connection
@@ -119,6 +120,7 @@ import org.openhab.habdroid.util.getPrimaryServerId
 import org.openhab.habdroid.util.getRemoteUrl
 import org.openhab.habdroid.util.getSecretPrefs
 import org.openhab.habdroid.util.getStringOrNull
+import org.openhab.habdroid.util.getWifiManager
 import org.openhab.habdroid.util.hasPermissions
 import org.openhab.habdroid.util.isDebugModeEnabled
 import org.openhab.habdroid.util.isEventListenerEnabled
@@ -159,6 +161,22 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
     private var inServerSelectionMode = false
     private var wifiSsidDuringLastOnStart: String? = null
     private var notifHelper: NotificationHelper = NotificationHelper(this)
+
+    private val preferenceActivityCallback =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            CrashReportingHelper.d(TAG, "preferenceActivityCallback: $result")
+            val data = result.data ?: return@registerForActivityResult
+            if (data.getBooleanExtra(PreferencesActivity.RESULT_EXTRA_SITEMAP_CLEARED, false)) {
+                updateSitemapDrawerEntries()
+                executeOrStoreAction(PendingAction.ChooseSitemap())
+            }
+            if (data.getBooleanExtra(PreferencesActivity.RESULT_EXTRA_SITEMAP_DRAWER_CHANGED, false)) {
+                updateSitemapDrawerEntries()
+            }
+            if (data.getBooleanExtra(PreferencesActivity.RESULT_EXTRA_THEME_CHANGED, false)) {
+                recreate()
+            }
+        }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -278,7 +296,7 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
             queryServerProperties()
         }
 
-        val currentWifiSsid = getCurrentWifiSsid()
+        val currentWifiSsid = getCurrentWifiSsid(OpenHabApplication.DATA_ACCESS_TAG_SELECT_SERVER_WIFI)
         val switchToServer = determineServerIdToSwitchToBasedOnWifi(currentWifiSsid, wifiSsidDuringLastOnStart)
         wifiSsidDuringLastOnStart = currentWifiSsid
         if (pendingAction == null && switchToServer != -1) {
@@ -382,28 +400,6 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        CrashReportingHelper.d(TAG, "onActivityResult() requestCode = $requestCode, resultCode = $resultCode")
-        when (requestCode) {
-            REQUEST_CODE_SETTINGS -> {
-                if (data == null) {
-                    return
-                }
-                if (data.getBooleanExtra(PreferencesActivity.RESULT_EXTRA_SITEMAP_CLEARED, false)) {
-                    updateSitemapDrawerEntries()
-                    executeOrStoreAction(PendingAction.ChooseSitemap())
-                }
-                if (data.getBooleanExtra(PreferencesActivity.RESULT_EXTRA_SITEMAP_DRAWER_CHANGED, false)) {
-                    updateSitemapDrawerEntries()
-                }
-                if (data.getBooleanExtra(PreferencesActivity.RESULT_EXTRA_THEME_CHANGED, false)) {
-                    recreate()
-                }
-            }
-        }
-    }
-
     public override fun onSaveInstanceState(savedInstanceState: Bundle) {
         CrashReportingHelper.d(TAG, "onSaveInstanceState()")
         isStarted = false
@@ -462,7 +458,7 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
         serverProperties = null
         handlePendingAction()
 
-        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val wifiManager = getWifiManager(OpenHabApplication.DATA_ACCESS_TAG_SUGGEST_TURN_ON_WIFI)
         when {
             newConnection != null -> {
                 handleConnectionChange()
@@ -482,11 +478,9 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
                             handleServiceResolveResult(resolver.resolve())
                             serviceResolveJob = null
                         }
-                        controller.updateConnection(
-                            null,
+                        controller.updateConnection(null,
                             getString(R.string.resolving_openhab),
-                            R.drawable.ic_home_search_outline_grey_340dp
-                        )
+                            R.drawable.ic_home_search_outline_grey_340dp)
                     }
                 } else {
                     val officialServer = !failureReason.wouldHaveUsedLocalConnection() &&
@@ -520,7 +514,7 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
     fun scheduleRetry(runAfterDelay: () -> Unit) {
         retryJob?.cancel(CancellationException("scheduleRetry() was called"))
         retryJob = CoroutineScope(Dispatchers.Main + Job()).launch {
-            delay(30 * 1000)
+            delay(30000)
             Log.d(TAG, "runAfterDelay()")
             runAfterDelay()
         }
@@ -669,13 +663,11 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
             val panelIntent = Intent(Settings.Panel.ACTION_WIFI)
             startActivity(panelIntent)
         } else {
-            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val wifiManager = getWifiManager(OpenHabApplication.DATA_ACCESS_TAG_SUGGEST_TURN_ON_WIFI)
             @Suppress("DEPRECATION")
             wifiManager.isWifiEnabled = true
-            controller.updateConnection(
-                null, getString(R.string.waiting_for_wifi),
-                R.drawable.ic_wifi_strength_outline_grey_24dp
-            )
+            controller.updateConnection(null, getString(R.string.waiting_for_wifi),
+                R.drawable.ic_wifi_strength_outline_grey_24dp)
         }
     }
 
@@ -710,10 +702,8 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
             }
             handlePendingAction()
         }
-        propsUpdateHandle = ServerProperties.fetch(
-            this, connection!!,
-            successCb, this::handlePropertyFetchFailure
-        )
+        propsUpdateHandle = ServerProperties.fetch(this, connection!!,
+            successCb, this::handlePropertyFetchFailure)
         BackgroundTasksManager.triggerPeriodicWork(this)
     }
 
@@ -812,26 +802,21 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
 
     private fun setupDrawer() {
         drawerLayout = findViewById(R.id.activity_content)
-        drawerToggle = ActionBarDrawerToggle(
-            this, drawerLayout,
-            R.string.drawer_open, R.string.drawer_close
-        )
+        drawerToggle = ActionBarDrawerToggle(this, drawerLayout,
+            R.string.drawer_open, R.string.drawer_close)
         drawerLayout.addDrawerListener(drawerToggle)
         drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
             override fun onDrawerOpened(drawerView: View) {
                 if (serverProperties != null && propsUpdateHandle == null) {
-                    propsUpdateHandle = ServerProperties.updateSitemaps(
-                        this@MainActivity,
+                    propsUpdateHandle = ServerProperties.updateSitemaps(this@MainActivity,
                         serverProperties!!, connection!!,
                         { props ->
                             serverProperties = props
                             updateSitemapDrawerEntries()
                         },
-                        this@MainActivity::handlePropertyFetchFailure
-                    )
+                        this@MainActivity::handlePropertyFetchFailure)
                 }
             }
-
             override fun onDrawerClosed(drawerView: View) {
                 super.onDrawerClosed(drawerView)
                 updateDrawerMode(false)
@@ -882,7 +867,7 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
                 R.id.settings -> {
                     val settingsIntent = Intent(this@MainActivity, PreferencesActivity::class.java)
                     settingsIntent.putExtra(PreferencesActivity.START_EXTRA_SERVER_PROPERTIES, serverProperties)
-                    startActivityForResult(settingsIntent, REQUEST_CODE_SETTINGS)
+                    preferenceActivityCallback.launch(settingsIntent)
                     handled = true
                 }
                 R.id.about -> {
@@ -1213,7 +1198,8 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
 
     fun updateTitle() {
         val title = controller.currentTitle
-        setTitle(title ?: getString(R.string.app_name))
+        val activeServerName = ServerConfiguration.load(prefs, getSecretPrefs(), prefs.getActiveServerId())?.name
+        setTitle(title ?: activeServerName ?: getString(R.string.app_name))
         drawerToggle.isDrawerIndicatorEnabled = !controller.canGoBack()
     }
 
@@ -1297,10 +1283,8 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
                     val authHeader = request.header("Authorization")
                     if (authHeader?.startsWith("Basic") == true) {
                         val base64Credentials = authHeader.substring("Basic".length).trim()
-                        val credentials = String(
-                            Base64.decode(base64Credentials, Base64.DEFAULT),
-                            Charset.forName("UTF-8")
-                        )
+                        val credentials = String(Base64.decode(base64Credentials, Base64.DEFAULT),
+                            Charset.forName("UTF-8"))
                         append("\nUsername: ")
                         append(credentials.substring(0, credentials.indexOf(":")))
                     }
@@ -1380,28 +1364,22 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
     }
 
     private fun manageHabPanelShortcut(visible: Boolean) {
-        manageShortcut(
-            visible, "habpanel", ACTION_HABPANEL_SELECTED,
+        manageShortcut(visible, "habpanel", ACTION_HABPANEL_SELECTED,
             R.string.mainmenu_openhab_habpanel, R.mipmap.ic_shortcut_habpanel,
-            R.string.app_shortcut_disabled_habpanel
-        )
+            R.string.app_shortcut_disabled_habpanel)
     }
 
     private fun manageNotificationShortcut(visible: Boolean) {
-        manageShortcut(
-            visible, "notification", ACTION_NOTIFICATION_SELECTED,
+        manageShortcut(visible, "notification", ACTION_NOTIFICATION_SELECTED,
             R.string.app_notifications, R.mipmap.ic_shortcut_notifications,
-            R.string.app_shortcut_disabled_notifications
-        )
+            R.string.app_shortcut_disabled_notifications)
     }
 
     private fun manageVoiceRecognitionShortcut(visible: Boolean) {
-        manageShortcut(
-            visible, "voice_recognition", ACTION_VOICE_RECOGNITION_SELECTED,
+        manageShortcut(visible, "voice_recognition", ACTION_VOICE_RECOGNITION_SELECTED,
             R.string.mainmenu_openhab_voice_recognition,
             R.mipmap.ic_shortcut_voice_recognition,
-            R.string.app_shortcut_disabled_voice_recognition
-        )
+            R.string.app_shortcut_disabled_voice_recognition)
     }
 
     private fun manageShortcut(
@@ -1486,7 +1464,6 @@ class MainActivity : AbstractBaseActivity(), ConnectionFactory.UpdateListener {
         private val TAG = MainActivity::class.java.simpleName
 
         // Activities request codes
-        private const val REQUEST_CODE_SETTINGS = 1001
-        private const val REQUEST_CODE_PERMISSIONS = 1002
+        private const val REQUEST_CODE_PERMISSIONS = 1001
     }
 }

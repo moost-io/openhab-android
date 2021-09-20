@@ -1,0 +1,281 @@
+Index: .idea/compiler.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"CompilerConfiguration\">\n    <bytecodeTargetLevel target=\"11\" />\n  </component>\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/compiler.xml b/.idea/compiler.xml
+--- a/.idea/compiler.xml	(revision ed53c25cd8a81612c790dd0c43bcf0210ce4da0f)
++++ b/.idea/compiler.xml	(date 1632155883173)
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <project version="4">
+   <component name="CompilerConfiguration">
+-    <bytecodeTargetLevel target="11" />
++    <bytecodeTargetLevel target="14" />
+   </component>
+-</project>
+\ No newline at end of file
++</project>
+Index: mobile/src/main/java/org/openhab/habdroid/background/tiles/AbstractTileService.kt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>/*\n * Copyright (c) 2010-2021 Contributors to the openHAB project\n *\n * See the NOTICE file(s) distributed with this work for additional\n * information.\n *\n * This program and the accompanying materials are made available under the\n * terms of the Eclipse Public License 2.0 which is available at\n * http://www.eclipse.org/legal/epl-2.0\n *\n * SPDX-License-Identifier: EPL-2.0\n */\n\npackage org.openhab.habdroid.background.tiles\n\nimport android.content.ComponentName\nimport android.content.Context\nimport android.content.Intent\nimport android.content.SharedPreferences\nimport android.content.pm.PackageManager\nimport android.graphics.drawable.Icon\nimport android.os.Build\nimport android.os.Parcelable\nimport android.service.quicksettings.Tile\nimport android.service.quicksettings.TileService\nimport android.util.Log\nimport androidx.annotation.DrawableRes\nimport androidx.annotation.RequiresApi\nimport androidx.annotation.VisibleForTesting\nimport androidx.lifecycle.Lifecycle\nimport androidx.lifecycle.LifecycleOwner\nimport androidx.lifecycle.LifecycleRegistry\nimport androidx.work.WorkInfo\nimport androidx.work.WorkManager\nimport kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.GlobalScope\nimport kotlinx.coroutines.Job\nimport kotlinx.coroutines.delay\nimport kotlinx.coroutines.launch\nimport kotlinx.parcelize.Parcelize\nimport org.json.JSONException\nimport org.json.JSONObject\nimport org.openhab.habdroid.R\nimport org.openhab.habdroid.background.BackgroundTasksManager\nimport org.openhab.habdroid.background.ItemUpdateWorker\nimport org.openhab.habdroid.background.tiles.AbstractTileService.Companion.getPrefKeyForId\nimport org.openhab.habdroid.ui.PreferencesActivity\nimport org.openhab.habdroid.util.getPrefs\n\n@RequiresApi(Build.VERSION_CODES.N)\nabstract class AbstractTileService : TileService() {\n    @Suppress(\"PropertyName\") @VisibleForTesting abstract val ID: Int\n    private var subtitleUpdateJob: Job? = null\n    private val lifeCycleOwner = object : LifecycleOwner {\n        private val lifecycleRegistry = LifecycleRegistry(this).apply {\n            handleLifecycleEvent(Lifecycle.Event.ON_START)\n        }\n\n        override fun getLifecycle(): Lifecycle {\n            return lifecycleRegistry\n        }\n\n        fun startListening() {\n            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)\n        }\n\n        fun stopListening() {\n            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)\n        }\n\n        fun destroy() {\n            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)\n        }\n    }\n\n    override fun onStartListening() {\n        Log.d(TAG, \"onStartListening()\")\n        qsTile?.let { updateTile(it) }\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {\n            val workManager = WorkManager.getInstance(applicationContext)\n            val infoLiveData =\n                workManager.getWorkInfosByTagLiveData(BackgroundTasksManager.WORKER_TAG_PREFIX_TILE_ID + ID)\n            infoLiveData.observe(lifeCycleOwner) {\n                updateTileSubtitle()\n            }\n\n            updateTileSubtitle()\n        }\n    }\n\n    override fun onStopListening() {\n        Log.d(TAG, \"onStopListening()\")\n    }\n\n    override fun onTileAdded() {\n        Log.d(TAG, \"onTileAdded()\")\n        qsTile?.let { updateTile(it) }\n    }\n\n    override fun onTileRemoved() {\n        Log.d(TAG, \"onTileRemoved()\")\n    }\n\n    override fun onDestroy() {\n        Log.d(TAG, \"onDestroy()\")\n        super.onDestroy()\n        lifeCycleOwner.stopListening()\n        lifeCycleOwner.destroy()\n    }\n\n    override fun onClick() {\n        Log.d(TAG, \"onClick()\")\n        val data = getPrefs().getTileData(ID)\n        if (data?.item?.isNotEmpty() == true && data.state.isNotEmpty()) {\n            lifeCycleOwner.startListening()\n            if (data.requireUnlock && isLocked) {\n                unlockAndRun { BackgroundTasksManager.enqueueTileUpdate(this, data, ID) }\n            } else {\n                BackgroundTasksManager.enqueueTileUpdate(this, data, ID)\n            }\n        } else {\n            Intent(this, PreferencesActivity::class.java).apply {\n                action = ACTION_QS_TILE_PREFERENCES\n                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)\n                startActivity(this)\n            }\n        }\n    }\n\n    private fun updateTile(tile: Tile) {\n        Log.d(TAG, \"updateTile()\")\n        val data = getPrefs().getTileData(ID)\n\n        tile.apply {\n            state = Tile.STATE_INACTIVE\n            label = data?.tileLabel ?: getString(R.string.tile_number, ID)\n            icon = Icon.createWithResource(this@AbstractTileService, getIconRes(applicationContext, data?.icon))\n            updateTile()\n        }\n    }\n\n    @RequiresApi(Build.VERSION_CODES.Q)\n    private fun updateTileSubtitle() {\n        Log.d(TAG, \"updateTileSubtitle()\")\n\n        val lastInfo = WorkManager\n            .getInstance(applicationContext)\n            .getWorkInfosByTag(BackgroundTasksManager.WORKER_TAG_PREFIX_TILE_ID + ID)\n            .get()\n            .lastOrNull()\n        var lastWorkInfoState = lastInfo?.state\n        val timestamp = lastInfo?.outputData?.getLong(ItemUpdateWorker.OUTPUT_DATA_TIMESTAMP, 0) ?: 0\n        if (lastWorkInfoState?.isFinished == true && timestamp < System.currentTimeMillis() - 5 * 1000) {\n            lastWorkInfoState = null\n        }\n        var updateSubtitleLaterAgain = false\n        val statusRes = when (lastWorkInfoState) {\n            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> getString(R.string.item_update_short_status_waiting)\n            WorkInfo.State.RUNNING -> getString(R.string.item_update_short_status_sending)\n            WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {\n                updateSubtitleLaterAgain = true\n                getString(R.string.item_update_short_status_failed)\n            }\n            WorkInfo.State.SUCCEEDED -> {\n                updateSubtitleLaterAgain = true\n                ItemUpdateWorker.getShortItemUpdateSuccessMessage(\n                    this,\n                    lastInfo?.outputData?.getString(ItemUpdateWorker.OUTPUT_DATA_SENT_VALUE).orEmpty()\n                )\n            }\n            null -> \"\"\n        }\n        qsTile?.apply {\n            subtitle = statusRes\n            updateTile()\n        }\n        if (statusRes.isEmpty()) {\n            lifeCycleOwner.stopListening()\n        }\n        subtitleUpdateJob?.cancel()\n        if (updateSubtitleLaterAgain) {\n            subtitleUpdateJob = GlobalScope.launch(Dispatchers.Main) {\n                delay(6000)\n                updateTileSubtitle()\n            }\n        }\n    }\n\n    companion object {\n        private val TAG = AbstractTileService::class.java.simpleName\n        const val TILE_COUNT = 12\n\n        fun getPrefKeyForId(id: Int) = \"tile_data_$id\"\n\n        @DrawableRes fun getIconRes(context: Context, icon: String?): Int = when (icon) {\n            context.getString(R.string.tile_icon_bed_value) -> R.drawable.ic_bed_outline_black_24dp\n            context.getString(R.string.tile_icon_sofa_value) -> R.drawable.ic_sofa_black_24dp\n            context.getString(R.string.tile_icon_bath_value) -> R.drawable.ic_paper_roll_outline_black_24dp\n            context.getString(R.string.tile_icon_house_value) -> R.drawable.ic_home_outline_grey_24dp\n            context.getString(R.string.tile_icon_tree_value) -> R.drawable.ic_tree_outline_grey_24dp\n            context.getString(R.string.tile_icon_light_switch_value) -> R.drawable.ic_light_switch_black_24dp\n            context.getString(R.string.tile_icon_bulb_value) -> R.drawable.ic_lightbulb_outline_black_24dp\n            context.getString(R.string.tile_icon_lamp_ceiling_value) -> R.drawable.ic_ceiling_light_black_24dp\n            context.getString(R.string.tile_icon_lamp_floor_value) -> R.drawable.ic_floor_lamp_black_24dp\n            context.getString(R.string.tile_icon_lamp_bedside_value) -> R.drawable.ic_lamp_black_24dp\n            context.getString(R.string.tile_icon_lamp_outdoor_value) -> R.drawable.ic_outdoor_lamp_black_24dp\n            context.getString(R.string.tile_icon_garage_value) -> R.drawable.ic_garage_black_24dp\n            context.getString(R.string.tile_icon_roller_shutter_value) -> R.drawable.ic_window_shutter_black_24dp\n            context.getString(R.string.tile_icon_battery_value) -> R.drawable.ic_battery_outline_grey_24dp\n            context.getString(R.string.tile_icon_lock_value) -> R.drawable.ic_lock_outline_grey_24dp\n            context.getString(R.string.tile_icon_camera_value) -> R.drawable.ic_webcam_black_24dp\n            context.getString(R.string.tile_icon_tv_value) -> R.drawable.ic_tv_black_24dp\n            context.getString(R.string.tile_icon_radio_value) -> R.drawable.ic_outline_radio_24dp\n            context.getString(R.string.tile_icon_wifi_value) -> R.drawable.ic_wifi_strength_outline_grey_24dp\n            context.getString(R.string.tile_icon_phone_value) -> R.drawable.ic_phone_outline_grey_24dp\n            context.getString(R.string.tile_icon_cloud_upload_value) -> R.drawable.ic_cloud_upload_outline_grey_24dp\n            context.getString(R.string.tile_icon_microphone_value) -> R.drawable.ic_microphone_outline_white_24dp\n            context.getString(R.string.tile_icon_power_plug_value) -> R.drawable.ic_power_plug_outline_grey_24dp\n            context.getString(R.string.tile_icon_color_palette_value) -> R.drawable.ic_palette_outline_grey_24dp\n            context.getString(R.string.tile_icon_switch_value) -> R.drawable.ic_power_settings_black_24dp\n            context.getString(R.string.tile_icon_text_value) -> R.drawable.ic_outline_format_align_left_grey_24dp\n            context.getString(R.string.tile_icon_earth_value) -> R.drawable.ic_earth_grey_24dp\n            context.getString(R.string.tile_icon_star_value) -> R.drawable.ic_star_border_grey_24dp\n            context.getString(R.string.tile_icon_clock_value) -> R.drawable.ic_access_time_white_24dp\n            context.getString(R.string.tile_icon_alarm_clock_value) -> R.drawable.ic_alarm_grey_24dp\n            context.getString(R.string.tile_icon_magnifier_value) -> R.drawable.ic_search_white_24dp\n            context.getString(R.string.tile_icon_baby_value) -> R.drawable.ic_baby_black_24dp\n            context.getString(R.string.tile_icon_child_value) -> R.drawable.ic_account_child_black_24dp\n            context.getString(R.string.tile_icon_man_value) -> R.drawable.ic_face_outline_black_24dp\n            context.getString(R.string.tile_icon_woman_value) -> R.drawable.ic_face_woman_outline_black_24dp\n            context.getString(R.string.tile_icon_person_value) -> R.drawable.ic_person_outline_grey_24dp\n            context.getString(R.string.tile_icon_people_value) -> R.drawable.ic_people_outline_grey_24dp\n            context.getString(R.string.tile_icon_chat_value) -> R.drawable.ic_forum_outline_grey_24dp\n            context.getString(R.string.tile_icon_settings_value) -> R.drawable.ic_settings_outline_grey_24dp\n            context.getString(R.string.tile_icon_shield_value) -> R.drawable.ic_security_grey_24dp\n            context.getString(R.string.tile_icon_fan_value) -> R.drawable.ic_fan_black_24dp\n            context.getString(R.string.tile_icon_bell_value) -> R.drawable.ic_bell_outline_grey_24dp\n            context.getString(R.string.tile_icon_dashboard_value) -> R.drawable.ic_view_dashboard_outline_grey_24dp\n            else -> R.drawable.ic_openhab_appicon_24dp\n        }\n\n        fun requestTileUpdate(context: Context, id: Int) {\n            val data = context.getPrefs().getTileData(id)\n            val tileService = ComponentName(\n                context,\n                getClassNameForId(id)\n            )\n            val tileServiceState = if (data != null) PackageManager.COMPONENT_ENABLED_STATE_ENABLED\n            else PackageManager.COMPONENT_ENABLED_STATE_DISABLED\n            context.packageManager.setComponentEnabledSetting(\n                tileService,\n                tileServiceState,\n                PackageManager.DONT_KILL_APP\n            )\n            requestListeningState(context, tileService)\n        }\n\n        @VisibleForTesting fun getClassNameForId(id: Int) = \"org.openhab.habdroid.background.tiles.TileService$id\"\n        fun getIdFromClassName(className: String) =\n            className.substringAfter(\"org.openhab.habdroid.background.tiles.TileService\").toInt()\n    }\n}\n\n@Parcelize\ndata class TileData(\n    val item: String,\n    val state: String,\n    val label: String,\n    val tileLabel: String,\n    val mappedState: String,\n    val icon: String,\n    val requireUnlock: Boolean\n) : Parcelable {\n    fun isValid(): Boolean {\n        return item.isNotEmpty() &&\n            label.isNotEmpty() &&\n            tileLabel.isNotEmpty() &&\n            mappedState.isNotEmpty() &&\n            icon.isNotEmpty()\n    }\n}\n\nfun SharedPreferences.getTileData(id: Int): TileData? {\n    val tileString = getString(getPrefKeyForId(id), null) ?: return null\n    return try {\n        val obj = JSONObject(tileString)\n        val item = obj.getString(\"item\")\n        val state = obj.getString(\"state\")\n        val label = obj.getString(\"label\")\n        val tileLabel = obj.getString(\"tileLabel\")\n        val mappedState = obj.getString(\"mappedState\")\n        val icon = obj.getString(\"icon\")\n        val requireUnlock = obj.getBoolean(\"requireUnlock\")\n        TileData(item, state, label, tileLabel, mappedState, icon, requireUnlock)\n    } catch (e: JSONException) {\n        null\n    }\n}\n\nfun SharedPreferences.Editor.putTileData(id: Int, data: TileData?): SharedPreferences.Editor {\n    if (data == null) {\n        putString(getPrefKeyForId(id), null)\n    } else {\n        val obj = JSONObject()\n            .put(\"item\", data.item)\n            .put(\"state\", data.state)\n            .put(\"label\", data.label)\n            .put(\"tileLabel\", data.tileLabel)\n            .put(\"mappedState\", data.mappedState)\n            .put(\"icon\", data.icon)\n            .put(\"requireUnlock\", data.requireUnlock)\n            .toString()\n        putString(getPrefKeyForId(id), obj)\n    }\n    return this\n}\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/mobile/src/main/java/org/openhab/habdroid/background/tiles/AbstractTileService.kt b/mobile/src/main/java/org/openhab/habdroid/background/tiles/AbstractTileService.kt
+--- a/mobile/src/main/java/org/openhab/habdroid/background/tiles/AbstractTileService.kt	(revision ed53c25cd8a81612c790dd0c43bcf0210ce4da0f)
++++ b/mobile/src/main/java/org/openhab/habdroid/background/tiles/AbstractTileService.kt	(date 1632155883180)
+@@ -49,7 +49,9 @@
+ 
+ @RequiresApi(Build.VERSION_CODES.N)
+ abstract class AbstractTileService : TileService() {
+-    @Suppress("PropertyName") @VisibleForTesting abstract val ID: Int
++    @Suppress("PropertyName")
++    @VisibleForTesting
++    abstract val ID: Int
+     private var subtitleUpdateJob: Job? = null
+     private val lifeCycleOwner = object : LifecycleOwner {
+         private val lifecycleRegistry = LifecycleRegistry(this).apply {
+@@ -192,7 +194,8 @@
+ 
+         fun getPrefKeyForId(id: Int) = "tile_data_$id"
+ 
+-        @DrawableRes fun getIconRes(context: Context, icon: String?): Int = when (icon) {
++        @DrawableRes
++        fun getIconRes(context: Context, icon: String?): Int = when (icon) {
+             context.getString(R.string.tile_icon_bed_value) -> R.drawable.ic_bed_outline_black_24dp
+             context.getString(R.string.tile_icon_sofa_value) -> R.drawable.ic_sofa_black_24dp
+             context.getString(R.string.tile_icon_bath_value) -> R.drawable.ic_paper_roll_outline_black_24dp
+@@ -255,7 +258,8 @@
+             requestListeningState(context, tileService)
+         }
+ 
+-        @VisibleForTesting fun getClassNameForId(id: Int) = "org.openhab.habdroid.background.tiles.TileService$id"
++        @VisibleForTesting
++        fun getClassNameForId(id: Int) = "org.openhab.habdroid.background.tiles.TileService$id"
+         fun getIdFromClassName(className: String) =
+             className.substringAfter("org.openhab.habdroid.background.tiles.TileService").toInt()
+     }
+Index: .idea/codeStyles/Project.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><component name=\"ProjectCodeStyleConfiguration\">\n  <code_scheme name=\"Project\" version=\"173\">\n    <JetCodeStyleSettings>\n      <option name=\"PACKAGES_TO_USE_STAR_IMPORTS\">\n        <value>\n          <package name=\"kotlinx.android.synthetic\" withSubpackages=\"true\" static=\"false\" />\n        </value>\n      </option>\n      <option name=\"PACKAGES_IMPORT_LAYOUT\">\n        <value>\n          <package name=\"\" alias=\"false\" withSubpackages=\"true\" />\n          <package name=\"\" alias=\"true\" withSubpackages=\"true\" />\n        </value>\n      </option>\n      <option name=\"NAME_COUNT_TO_USE_STAR_IMPORT\" value=\"2147483647\" />\n      <option name=\"NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS\" value=\"2147483647\" />\n      <option name=\"CODE_STYLE_DEFAULTS\" value=\"KOTLIN_OFFICIAL\" />\n    </JetCodeStyleSettings>\n    <codeStyleSettings language=\"XML\">\n      <indentOptions>\n        <option name=\"CONTINUATION_INDENT_SIZE\" value=\"4\" />\n      </indentOptions>\n      <arrangement>\n        <rules>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>xmlns:android</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>^$</XML_NAMESPACE>\n                </AND>\n              </match>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>xmlns:.*</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>^$</XML_NAMESPACE>\n                </AND>\n              </match>\n              <order>BY_NAME</order>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>.*:id</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>http://schemas.android.com/apk/res/android</XML_NAMESPACE>\n                </AND>\n              </match>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>.*:name</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>http://schemas.android.com/apk/res/android</XML_NAMESPACE>\n                </AND>\n              </match>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>name</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>^$</XML_NAMESPACE>\n                </AND>\n              </match>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>style</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>^$</XML_NAMESPACE>\n                </AND>\n              </match>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>.*</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>^$</XML_NAMESPACE>\n                </AND>\n              </match>\n              <order>BY_NAME</order>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>.*</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>http://schemas.android.com/apk/res/android</XML_NAMESPACE>\n                </AND>\n              </match>\n              <order>ANDROID_ATTRIBUTE_ORDER</order>\n            </rule>\n          </section>\n          <section>\n            <rule>\n              <match>\n                <AND>\n                  <NAME>.*</NAME>\n                  <XML_ATTRIBUTE />\n                  <XML_NAMESPACE>.*</XML_NAMESPACE>\n                </AND>\n              </match>\n              <order>BY_NAME</order>\n            </rule>\n          </section>\n        </rules>\n      </arrangement>\n    </codeStyleSettings>\n    <codeStyleSettings language=\"kotlin\">\n      <option name=\"CODE_STYLE_DEFAULTS\" value=\"KOTLIN_OFFICIAL\" />\n      <option name=\"LINE_COMMENT_AT_FIRST_COLUMN\" value=\"false\" />\n      <option name=\"LINE_COMMENT_ADD_SPACE\" value=\"true\" />\n      <option name=\"KEEP_BLANK_LINES_IN_DECLARATIONS\" value=\"1\" />\n      <option name=\"KEEP_BLANK_LINES_IN_CODE\" value=\"1\" />\n      <option name=\"KEEP_BLANK_LINES_BEFORE_RBRACE\" value=\"0\" />\n      <option name=\"ALIGN_MULTILINE_PARAMETERS\" value=\"false\" />\n      <indentOptions>\n        <option name=\"CONTINUATION_INDENT_SIZE\" value=\"4\" />\n      </indentOptions>\n    </codeStyleSettings>\n  </code_scheme>\n</component>\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/codeStyles/Project.xml b/.idea/codeStyles/Project.xml
+--- a/.idea/codeStyles/Project.xml	(revision ed53c25cd8a81612c790dd0c43bcf0210ce4da0f)
++++ b/.idea/codeStyles/Project.xml	(date 1632155883197)
+@@ -6,12 +6,6 @@
+           <package name="kotlinx.android.synthetic" withSubpackages="true" static="false" />
+         </value>
+       </option>
+-      <option name="PACKAGES_IMPORT_LAYOUT">
+-        <value>
+-          <package name="" alias="false" withSubpackages="true" />
+-          <package name="" alias="true" withSubpackages="true" />
+-        </value>
+-      </option>
+       <option name="NAME_COUNT_TO_USE_STAR_IMPORT" value="2147483647" />
+       <option name="NAME_COUNT_TO_USE_STAR_IMPORT_FOR_MEMBERS" value="2147483647" />
+       <option name="CODE_STYLE_DEFAULTS" value="KOTLIN_OFFICIAL" />
+Index: mobile/google-services.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>{\n  \"project_info\": {\n    \"project_number\": \"849058498762\",\n    \"firebase_url\": \"https://openhab-mobile.firebaseio.com\",\n    \"project_id\": \"openhab-mobile\",\n    \"storage_bucket\": \"openhab-mobile.appspot.com\"\n  },\n  \"client\": [\n    {\n      \"client_info\": {\n        \"mobilesdk_app_id\": \"1:849058498762:android:9fcb28f91e1b4abb\",\n        \"android_client_info\": {\n          \"package_name\": \"org.openhab.habdroid\"\n        }\n      },\n      \"oauth_client\": [\n        {\n          \"client_id\": \"849058498762-079qmadgd5f5hkdve7lkrbubfi842afj.apps.googleusercontent.com\",\n          \"client_type\": 1,\n          \"android_info\": {\n            \"package_name\": \"org.openhab.habdroid\",\n            \"certificate_hash\": \"28e3a41b7c84483ded3df7b8fc2789b5c912badd\"\n          }\n        },\n        {\n          \"client_id\": \"849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com\",\n          \"client_type\": 3\n        }\n      ],\n      \"api_key\": [\n        {\n          \"current_key\": \"AIzaSyBtollIxWyEIm3ni68CaoDJgZuUqoYC2Zw\"\n        }\n      ],\n      \"services\": {\n        \"appinvite_service\": {\n          \"other_platform_oauth_client\": [\n            {\n              \"client_id\": \"849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com\",\n              \"client_type\": 3\n            },\n            {\n              \"client_id\": \"849058498762-3m681ei7b78ajqt9gmvt2gumah724v7q.apps.googleusercontent.com\",\n              \"client_type\": 2,\n              \"ios_info\": {\n                \"bundle_id\": \"es.spaphone.openhab\",\n                \"app_store_id\": \"492054521\"\n              }\n            }\n          ]\n        }\n      }\n    },\n    {\n      \"client_info\": {\n        \"mobilesdk_app_id\": \"1:849058498762:android:1e73d9e722953c8b\",\n        \"android_client_info\": {\n          \"package_name\": \"org.openhab.habdroid.beta\"\n        }\n      },\n      \"oauth_client\": [\n        {\n          \"client_id\": \"849058498762-b49s5qfketdcojkrue5mo1geh0k5q4pm.apps.googleusercontent.com\",\n          \"client_type\": 1,\n          \"android_info\": {\n            \"package_name\": \"org.openhab.habdroid.beta\",\n            \"certificate_hash\": \"28e3a41b7c84483ded3df7b8fc2789b5c912badd\"\n          }\n        },\n        {\n          \"client_id\": \"849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com\",\n          \"client_type\": 3\n        }\n      ],\n      \"api_key\": [\n        {\n          \"current_key\": \"AIzaSyBtollIxWyEIm3ni68CaoDJgZuUqoYC2Zw\"\n        }\n      ],\n      \"services\": {\n        \"appinvite_service\": {\n          \"other_platform_oauth_client\": [\n            {\n              \"client_id\": \"849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com\",\n              \"client_type\": 3\n            },\n            {\n              \"client_id\": \"849058498762-3m681ei7b78ajqt9gmvt2gumah724v7q.apps.googleusercontent.com\",\n              \"client_type\": 2,\n              \"ios_info\": {\n                \"bundle_id\": \"es.spaphone.openhab\",\n                \"app_store_id\": \"492054521\"\n              }\n            }\n          ]\n        }\n      }\n    }\n  ],\n  \"configuration_version\": \"1\"\n}
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/mobile/google-services.json b/mobile/google-services.json
+--- a/mobile/google-services.json	(revision ed53c25cd8a81612c790dd0c43bcf0210ce4da0f)
++++ b/mobile/google-services.json	(date 1632155883201)
+@@ -1,101 +1,85 @@
+ {
+-  "project_info": {
+-    "project_number": "849058498762",
+-    "firebase_url": "https://openhab-mobile.firebaseio.com",
+-    "project_id": "openhab-mobile",
+-    "storage_bucket": "openhab-mobile.appspot.com"
+-  },
+-  "client": [
+-    {
+-      "client_info": {
+-        "mobilesdk_app_id": "1:849058498762:android:9fcb28f91e1b4abb",
+-        "android_client_info": {
+-          "package_name": "org.openhab.habdroid"
+-        }
+-      },
+-      "oauth_client": [
+-        {
+-          "client_id": "849058498762-079qmadgd5f5hkdve7lkrbubfi842afj.apps.googleusercontent.com",
+-          "client_type": 1,
+-          "android_info": {
+-            "package_name": "org.openhab.habdroid",
+-            "certificate_hash": "28e3a41b7c84483ded3df7b8fc2789b5c912badd"
+-          }
+-        },
+-        {
+-          "client_id": "849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com",
+-          "client_type": 3
+-        }
+-      ],
+-      "api_key": [
+-        {
+-          "current_key": "AIzaSyBtollIxWyEIm3ni68CaoDJgZuUqoYC2Zw"
+-        }
+-      ],
+-      "services": {
+-        "appinvite_service": {
+-          "other_platform_oauth_client": [
+-            {
+-              "client_id": "849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com",
+-              "client_type": 3
+-            },
+-            {
+-              "client_id": "849058498762-3m681ei7b78ajqt9gmvt2gumah724v7q.apps.googleusercontent.com",
+-              "client_type": 2,
+-              "ios_info": {
+-                "bundle_id": "es.spaphone.openhab",
+-                "app_store_id": "492054521"
+-              }
+-            }
+-          ]
+-        }
+-      }
+-    },
+-    {
+-      "client_info": {
+-        "mobilesdk_app_id": "1:849058498762:android:1e73d9e722953c8b",
+-        "android_client_info": {
+-          "package_name": "org.openhab.habdroid.beta"
+-        }
+-      },
+-      "oauth_client": [
+-        {
+-          "client_id": "849058498762-b49s5qfketdcojkrue5mo1geh0k5q4pm.apps.googleusercontent.com",
+-          "client_type": 1,
+-          "android_info": {
+-            "package_name": "org.openhab.habdroid.beta",
+-            "certificate_hash": "28e3a41b7c84483ded3df7b8fc2789b5c912badd"
+-          }
+-        },
+-        {
+-          "client_id": "849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com",
+-          "client_type": 3
+-        }
+-      ],
+-      "api_key": [
+-        {
+-          "current_key": "AIzaSyBtollIxWyEIm3ni68CaoDJgZuUqoYC2Zw"
+-        }
+-      ],
+-      "services": {
+-        "appinvite_service": {
+-          "other_platform_oauth_client": [
+-            {
+-              "client_id": "849058498762-bc6nbdk0aercq1e5utj1so77e390cr5j.apps.googleusercontent.com",
+-              "client_type": 3
+-            },
+-            {
+-              "client_id": "849058498762-3m681ei7b78ajqt9gmvt2gumah724v7q.apps.googleusercontent.com",
+-              "client_type": 2,
+-              "ios_info": {
+-                "bundle_id": "es.spaphone.openhab",
+-                "app_store_id": "492054521"
+-              }
+-            }
+-          ]
+-        }
+-      }
+-    }
+-  ],
+-  "configuration_version": "1"
+-}
+\ No newline at end of file
++    "project_info": {
++        "project_number": "392859643791",
++        "firebase_url": "https://moost-2beab.firebaseio.com",
++        "project_id": "moost-2beab",
++        "storage_bucket": "moost-2beab.appspot.com"
++    },
++    "client": [
++        {
++            "client_info": {
++                "mobilesdk_app_id": "1:392859643791:android:c9be7a0f63768458",
++                "android_client_info": {
++                    "package_name": "io.moost.android.moost"
++                }
++            },
++            "oauth_client": [
++                {
++                    "client_id": "392859643791-asijlr9plbi8tn96ok312jmii5air8jo.apps.googleusercontent.com",
++                    "client_type": 1,
++                    "android_info": {
++                        "package_name": "io.moost.android.moost",
++                        "certificate_hash": "57921ff36b4a5a607c6a1c4cb77d2f758b3e0bf2"
++                    }
++                },
++                {
++                    "client_id": "392859643791-fols8rbs8ipftfngv2rqs4arutok8i22.apps.googleusercontent.com",
++                    "client_type": 1,
++                    "android_info": {
++                        "package_name": "io.moost.android.moost",
++                        "certificate_hash": "94d1cc22d195a764c1c772086746718c7465c0ce"
++                    }
++                },
++                {
++                    "client_id": "392859643791-65p2e60gfj0ej58tatou54l4p98e03vk.apps.googleusercontent.com",
++                    "client_type": 3
++                }
++            ],
++            "api_key": [
++                {
++                    "current_key": "AIzaSyAiBGW02vum3AMZBJx_1TA__QZ81e5QAWM"
++                }
++            ],
++            "services": {
++                "appinvite_service": {
++                    "other_platform_oauth_client": [
++                        {
++                            "client_id": "392859643791-65p2e60gfj0ej58tatou54l4p98e03vk.apps.googleusercontent.com",
++                            "client_type": 3
++                        }
++                    ]
++                }
++            }
++        },
++        {
++            "client_info": {
++                "mobilesdk_app_id": "1:392859643791:android:3f9e4b8fdcf499b4cf65fa",
++                "android_client_info": {
++                    "package_name": "org.openhab.habdroid"
++                }
++            },
++            "oauth_client": [
++                {
++                    "client_id": "392859643791-65p2e60gfj0ej58tatou54l4p98e03vk.apps.googleusercontent.com",
++                    "client_type": 3
++                }
++            ],
++            "api_key": [
++                {
++                    "current_key": "AIzaSyAiBGW02vum3AMZBJx_1TA__QZ81e5QAWM"
++                }
++            ],
++            "services": {
++                "appinvite_service": {
++                    "other_platform_oauth_client": [
++                        {
++                            "client_id": "392859643791-65p2e60gfj0ej58tatou54l4p98e03vk.apps.googleusercontent.com",
++                            "client_type": 3
++                        }
++                    ]
++                }
++            }
++        }
++    ],
++    "configuration_version": "1"
++}
